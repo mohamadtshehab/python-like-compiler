@@ -38,9 +38,10 @@
 %type  <astNode> assignment expression number del_statment return_statement yield_statement assert_statement 
 %type  <astNode> raise_statement global_statement nonlocal_statement global_nonlocal_targets match_statement match_block 
 %type  <astNode> case try_statement try except finally except_statements with with_statements class 
-%type  <astNode> class_block  class_body function_call function block args arg member_expression logical_expression
+%type  <astNode> class_block  class_body function_call function block args arg parameters parameter_list parameter member_expression logical_expression logical_or logical_and logical_not comparison
+%type  <astNode> set_items
 %type  <astNode> conditional_statement elif_else elif_stmts if_statement else_statement elif_statement for_statement while_statement
-%error-verbose
+%define parse.error verbose
 %nonassoc EQUAL
 %left '+' '-'
 %left '*' '/'
@@ -52,7 +53,10 @@ prog  : /*Empty*/ {
             std::string name = "Program" + std::to_string(++n_nodes);
             $$ = new EmptyNode(name); 
       }
-      | NEWLINE         { }
+      | NEWLINE         {
+            std::string name = "Program" + std::to_string(++n_nodes);
+            $$ = new EmptyNode(name);
+      }
       | prog statements {     
             std::string name = "Program" + std::to_string(++n_nodes);
             $$ = new StatementsNode(name);
@@ -68,16 +72,16 @@ statements  : /*Empty*/ {
                   $$ = new StatementsNode(name);
             }
             | statements statement  { 
-                  $1->add($2);
+                  if ($2 != nullptr) $1->add($2);
                   $$ = $1; 
             }
             ;
 
 statement   : compound_statement    { $$ = $1; }
             | simple_statement      { $$ = $1; }
-            | NEWLINE
-            | COMMENT
-            | MULTILINECOMMENT
+            | NEWLINE             { $$ = nullptr; }
+            | COMMENT             { $$ = $1; }
+            | MULTILINECOMMENT    { $$ = nullptr; }
             ;
 
 simple_statement  : assignment            { $$ = $1; }
@@ -175,6 +179,18 @@ expression  : expression ADD expression   {
             | member_expression                 { $$ = $1; }
             | function_call                     { $$ = $1; }
             | LITERALSTRING                     { $$ = $1; }
+            | LEFT_BRACES set_items RIGHT_BRACES { $$ = $2; }
+            ;
+
+set_items : expression {
+                  $$ = new SetNode("Set" + std::to_string(++n_nodes));
+                  $$->add($1);
+            }
+            | set_items COMMA expression {
+                  $1->add($3);
+                  $$ = $1;
+            }
+            | set_items COMMA { $$ = $1; }
             ;
 
 number: INTEGER { $$ = $1; }
@@ -411,21 +427,15 @@ class_body  : /* Empty */ {
             }
             ;
 
-function_call     : IDENTIFIER LEFT_PARENTHES args RIGHT_PARENTHES {
-                        std::string name = dynamic_cast<IdentifierNode*>($1)->value + std::to_string(++n_nodes);
-                        $$ = new FunctionCall(name, $1);
-                        $$->add($1);
-                        $$->add($3);                                         
-                  }
-                  | IDENTIFIER LEFT_PARENTHES function_call RIGHT_PARENTHES {
-                        std::string name = dynamic_cast<IdentifierNode*>($1)->value + std::to_string(++n_nodes);
+function_call     : member_expression LEFT_PARENTHES args RIGHT_PARENTHES {
+                        std::string name = "Call" + std::to_string(++n_nodes);
                         $$ = new FunctionCall(name, $1);
                         $$->add($1);
                         $$->add($3);
                   }
                   ;
 
-function    : KEYWORD_DEF IDENTIFIER LEFT_PARENTHES args RIGHT_PARENTHES COLON block {
+function    : KEYWORD_DEF IDENTIFIER LEFT_PARENTHES parameters RIGHT_PARENTHES COLON block {
                   IdentifierNode* idFunc = dynamic_cast<IdentifierNode*>($2);
                   $$ = new FunctionNode(idFunc->value);
                   $$->add($4);
@@ -438,6 +448,34 @@ block : NEWLINE INDENT statements DEDENT  {
             $$->add($3);
       }
       ;
+
+parameters : /* Empty */ {
+                  $$ = new Args("Args" + std::to_string(++n_nodes));
+            }
+            | parameter_list { $$ = $1; }
+            ;
+
+parameter_list : parameter {
+                       $$ = new Args("Args" + std::to_string(++n_nodes));
+                       $$->add($1);
+                 }
+                 | parameter_list COMMA parameter {
+                       $1->add($3);
+                       $$ = $1;
+                 }
+                 | parameter_list COMMA { $$ = $1; }
+                 ;
+
+parameter : IDENTIFIER {
+                  $$ = new Arg("Arg" + std::to_string(++n_nodes));
+                  $$->add($1);
+            }
+            | IDENTIFIER COLON member_expression {
+                  $$ = new Arg("Arg" + std::to_string(++n_nodes));
+                  $$->add($1);
+                  $$->add($3);
+            }
+            ;
 
 args  : args arg {
             $1->add($2);
@@ -467,49 +505,45 @@ arg   : /*Empty*/    {
 member_expression : IDENTIFIER      {
                         $$ = $1;
                   }
-                  | member_expression %prec '.' IDENTIFIER  {
-                        $$ = new MemberExpression($1, $2);
+                  | member_expression '.' IDENTIFIER  {
+                        $$ = new MemberExpression($1, $3);
                         $$->add($1); 
-                        $$->add($2); 
-                  }
-                  | member_expression %prec '.' function_call     { 
-                        $$ = new MemberExpression($1, $2); 
-                        $$->add($1); 
-                        $$->add($2); 
+                        $$->add($3); 
                   }
                   ;
 
-logical_expression: expression      { $$ = $1; }
-                  | expression GREATEROREQUAL expression    {
-                        $$ = new BinaryLogicalExpression(">=", $1, $3);
-                  }
-                  | expression GREATERTHAN expression {
-                        $$ = new BinaryLogicalExpression(">", $1, $3);
-                  }
-                  | expression LESSOREQUAL expression {
-                        $$ = new BinaryLogicalExpression("<=", $1, $3);
-                  }
-                  | expression LESSTHAN expression    {
-                        $$ = new BinaryLogicalExpression("<", $1, $3);
-                  }
-                  | expression EQUAL expression {
-                        $$ = new BinaryLogicalExpression("==", $1, $3);
-                  }
-                  | expression NOTEQUAL expression    {
-                        $$ = new BinaryLogicalExpression("!=", $1, $3);
-                  }
-                  | logical_expression KEYWORD_AND logical_expression   {
-                        $$ = new BinaryLogicalExpression("and", $1, $3);
-                  }
-                  | logical_expression KEYWORD_OR logical_expression    {
-                        $$ = new BinaryLogicalExpression("or", $1, $3);
-                  }
-                  | KEYWORD_NOT logical_expression    {
-                        
-                  }
-                  | KEYWORD_TRUE    { $$ = $1; }
-                  | KEYWORD_FALSE   { $$ = $1; }
-                  ;
+logical_expression : logical_or { $$ = $1; };
+
+logical_or : logical_or KEYWORD_OR logical_and {
+                  $$ = new BinaryLogicalExpression("or", $1, $3);
+            }
+            | logical_and { $$ = $1; }
+            ;
+
+logical_and : logical_and KEYWORD_AND logical_not {
+                   $$ = new BinaryLogicalExpression("and", $1, $3);
+            }
+            | logical_not { $$ = $1; }
+            ;
+
+logical_not : KEYWORD_NOT logical_not {
+                  $$ = new UnaryExpressionNode("not", $2);
+            }
+            | comparison { $$ = $1; }
+            ;
+
+comparison : expression { $$ = $1; }
+           | comparison GREATEROREQUAL expression { $$ = new BinaryLogicalExpression(">=", $1, $3); }
+           | comparison GREATERTHAN expression { $$ = new BinaryLogicalExpression(">", $1, $3); }
+           | comparison LESSOREQUAL expression { $$ = new BinaryLogicalExpression("<=", $1, $3); }
+           | comparison LESSTHAN expression { $$ = new BinaryLogicalExpression("<", $1, $3); }
+           | comparison EQUAL expression { $$ = new BinaryLogicalExpression("==", $1, $3); }
+           | comparison NOTEQUAL expression { $$ = new BinaryLogicalExpression("!=", $1, $3); }
+           | comparison KEYWORD_NOT KEYWORD_IN expression { $$ = new BinaryLogicalExpression("not in", $1, $4); }
+           | comparison KEYWORD_IN expression { $$ = new BinaryLogicalExpression("in", $1, $3); }
+           | comparison KEYWORD_IS KEYWORD_NOT expression { $$ = new BinaryLogicalExpression("is not", $1, $4); }
+           | comparison KEYWORD_IS expression { $$ = new BinaryLogicalExpression("is", $1, $3); }
+           ;
 
 conditional_statement   : if_statement elif_else      {
                               $1->add($2);
@@ -641,13 +675,19 @@ while_statement   : KEYWORD_WHILE logical_expression COLON block {
 %%
 
 int main(int argc, char **argv) {
-      if (argc > 1)
-            for(int i=0;i<argc;i++)
-                  yyin=fopen(argv[1],"r");
-      else
-            yyin=stdin;
+      if (argc > 1) {
+            yyin = fopen(argv[1], "r");
+            if (yyin == nullptr) {
+                  std::cerr << "Cannot open input file: " << argv[1] << std::endl;
+                  return 1;
+            }
+      } else {
+            yyin = stdin;
+      }
       
-      yyparse();
+      if (yyparse() != 0) {
+            return 1;
+      }
 
       if (root != NULL) {
             AST ast(root);

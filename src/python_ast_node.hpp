@@ -30,8 +30,19 @@
 #define AST_NODE_H
 
 #include <iostream>
+#include <string>
 #include <vector>
 // #include <stdlib.h>
+
+inline std::string dot_escape(const std::string& text) {
+    std::string escaped;
+    for (char ch : text) {
+        if (ch == '\\' || ch == '"') escaped += '\\';
+        if (ch == '\n') escaped += "\\n";
+        else escaped += ch;
+    }
+    return escaped;
+}
 
 // Abstract base class for AST nodes
 class AstNode {
@@ -42,6 +53,48 @@ public:
     virtual void add(AstNode* node) = 0;
     virtual void print() const = 0;
     virtual ~AstNode() {}
+};
+
+class SetNode : public AstNode {
+private:
+    std::vector<AstNode*> elements;
+public:
+    explicit SetNode(const std::string& name) {
+        this->name = name;
+        this->label = "Set";
+    }
+    void add(AstNode* node) override {
+        elements.push_back(node);
+    }
+    void print() const override {
+        std::cout << "\t" << name << " [label=\"Set\"]" << std::endl;
+        for (const auto* element : elements) {
+            std::cout << "\t" << name << " -> " << element->name << ";" << std::endl;
+            element->print();
+        }
+    }
+    ~SetNode() override {
+        for (auto* element : elements) delete element;
+    }
+};
+
+class UnaryExpressionNode : public AstNode {
+private:
+    std::string operation;
+    AstNode* operand;
+public:
+    UnaryExpressionNode(const std::string& operation, AstNode* operand)
+        : operation(operation), operand(operand) {
+        this->name = "UnaryExpression_" + operand->name;
+        this->label = operation;
+    }
+    void add(AstNode*) override {}
+    void print() const override {
+        std::cout << "\t" << name << " [label=\"" << operation << "\"]" << std::endl;
+        std::cout << "\t" << name << " -> " << operand->name << ";" << std::endl;
+        operand->print();
+    }
+    ~UnaryExpressionNode() override { delete operand; }
 };
 
 // Composite node for representing function declare
@@ -145,7 +198,7 @@ public:
         std::cerr << "Cannot add a child to a leaf node." << std::endl;
     }
     void print() const override {
-        std::cout << "\t" << name << " [label=\"" << label << ": " << value << "\"]" << std::endl;
+        std::cout << "\t" << name << " [label=\"" << label << ": " << dot_escape(value) << "\"]" << std::endl;
     }
 };
 
@@ -160,7 +213,7 @@ public:
         std::cerr << "Cannot add a child to a leaf node." << std::endl;
     }
     void print() const override {
-        std::cout << "\t" << name << " [label=\"" << label << ": " << value << "\"]" << std::endl;
+        std::cout << "\t" << name << " [label=\"" << label << ": " << dot_escape(value) << "\"]" << std::endl;
     }
 };
 
@@ -175,7 +228,7 @@ public:
         std::cerr << "Cannot add a child to a leaf node." << std::endl;
     }
     void print() const override {
-        std::cout << "\t" << name << " [label=\"" << label << ": " << value << "\"]" << std::endl;
+        std::cout << "\t" << name << " [label=\"" << label << ": " << dot_escape(value) << "\"]" << std::endl;
     }
 };
 
@@ -190,7 +243,7 @@ public:
         std::cerr << "Cannot add a child to a leaf node." << std::endl;
     }
     void print() const override {
-        std::cout << "\t" << name << " [label=\"" << label << ": " << value << "\"]" << std::endl;
+        std::cout << "\t" << name << " [label=\"" << label << ": " << dot_escape(value) << "\"]" << std::endl;
     }
 };
 
@@ -229,7 +282,7 @@ public:
         next.push_back(node);
     }
     void print() const override {
-        std::cout << "\t" << name << " [shape=box,label=\"" << label << ": " << value << "()" << "\"]" << std::endl;
+        std::cout << "\t" << name << " [shape=box,label=\"" << label << ": " << dot_escape(value) << "()" << "\"]" << std::endl;
         std::vector<AstNode*>::iterator it;
         for (const auto& item : next) {
             std::cout << "\t" << name << " -> " << item->name << ";" << std::endl;
@@ -250,7 +303,7 @@ public:
         next.push_back(node);
     }
     void print() const override {
-        std::cout << "\t" << name << " [shape=box,label=\"" << label << ": " << value << "()" << "\"]" << std::endl;
+        std::cout << "\t" << name << " [shape=box,label=\"" << label << ": " << dot_escape(value) << "()" << "\"]" << std::endl;
         std::vector<AstNode*>::iterator it;
         for (const auto& item : next) {
             std::cout << "\t" << name << " -> " << item->name << ";" << std::endl;
@@ -271,7 +324,7 @@ public:
         next.push_back(node);
     }
     void print() const override {
-        std::cout << "\t" << name << " [shape=box,label=\"" << label << ": " << value << "()" << "\"]" << std::endl;
+        std::cout << "\t" << name << " [shape=box,label=\"" << label << ": " << dot_escape(value) << "()" << "\"]" << std::endl;
         std::vector<AstNode*>::iterator it;
         for (const auto& item : next) {
             std::cout << "\t" << name << " -> " << item->name << ";" << std::endl;
@@ -1012,6 +1065,14 @@ public:
         if(op == "or"){
             this->name = "BinaryLogicalExpression_" + l->name + "OR" + r->name;
             this->label = "BinaryLogicalExpression_" + l->name + "OR" + r->name;
+            this->value = l->value + r->value;
+        }
+        if(op == "not in" || op == "in" || op == "is not" || op == "is"){
+            std::string suffix = op == "not in" ? "NOTIN" :
+                                 op == "in" ? "IN" :
+                                 op == "is not" ? "ISNOT" : "IS";
+            this->name = "BinaryLogicalExpression_" + l->name + suffix + r->name;
+            this->label = this->name;
             this->value = l->value + r->value;
         }
     }
